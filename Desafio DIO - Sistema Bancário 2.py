@@ -77,14 +77,14 @@ def saque(*, saldo, limite, extrato, numero_saques, LIMITE_SAQUES):
         else:
             numero_saques += 1
             saldo -= valor_saque
-            extrato = extrato + f"\nSaque:\t- R$ {valor_saque:.2f}"    
+            extrato = extrato + f"\nSaque:\t\t- R$ {valor_saque:.2f}"    
             print("Saque realizado com sucesso!")
             return False, saldo, extrato, numero_saques
 
 def exibir_extrato(saldo,/ ,* , extrato):
     print("\n══════════════ Extrato ══════════════")
+    print(f"\nSaldo:\t\tR$ {saldo:.2f}")
     print("Não foram realizadas movimentações" if not extrato else extrato)
-    print(f"\nSaldo:\tR$ {saldo:.2f}")
     print("═════════════════════════════════════")
 
 def filtrar_usuario(cpf, usuarios):
@@ -119,12 +119,14 @@ def nova_conta(AGENCIA, usuarios, contas):
 
 def listar_contas(contas):
     for conta in contas:
-        linha = f'''Agência:\t{conta['Agência']}
-            C/C:\t{conta['Número da Conta']}
+        linha = f"""\
+            Agência:\t{conta['Agência']}
+            C/C:\t\t{conta['Número da Conta']}
             Titular:\t{conta['Usuário']['Nome']}
-        '''
+        """
         print('═' * 100)
-        print(textwrap.dedent(linha))
+        texto = textwrap.dedent(linha)
+        print(texto)
 
 def main():
     LIMITE_SAQUES = 3
