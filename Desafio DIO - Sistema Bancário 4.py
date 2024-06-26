@@ -1,9 +1,19 @@
 # Sistema bancário seguindo o paradigma de classes.
-# * - todos os argumentos após a * são nomeados
-# / - todos os argumentos antes do / são posicionais
+# TODO: estabelecer um limite de 10 transações diárias e informar o usuário caso tenha excedido esse limite
+# TODO: fazer um sistema de login
+# TODO: implementar pickle
+
+import pickle
 import textwrap
 from abc import ABC, abstractclassmethod, abstractproperty
-from datetime import datetime
+from datetime import datetime, timezone
+
+def log_transacao(func):
+    def envelope(*args, **kwargs):
+        resultado = func(*args, **kwargs)
+        print(f"{datetime.now()}: {func.__name__.upper()}")
+        return resultado
+    return envelope
 
 def verificar_decimal(numero):
     decimal = numero.split('.')[1]
@@ -14,12 +24,37 @@ def verificar_decimal(numero):
     else:
         return True
 
+class ContasIterador:
+    def __init__(self, contas):
+        self.contas = contas
+        self._index = 0
+    
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        try:
+            conta = self.contas[self._index]
+            return f"""
+                Agência:\t{conta.agencia}
+                Número:\t\t{conta.numero}
+                Titular:\t{conta.cliente.nome}
+                Saldo:\t\tR$ {conta.saldo:.2f}
+            """
+        except IndexError:
+            raise StopIteration
+        finally:
+            self._index += 1
+
 class Cliente:
     def __init__(self, endereco:str):
         self.endereco = endereco
         self.contas=[]
     
     def realizar_transacao(self, conta, transacao):
+        if len(conta.historico.transacoes_do_dia()) >= 10:
+            print("ERRO: Número de transações diárias excedido!")
+            return
         transacao.registrar(conta)
 
     def adicionar_conta(self, conta):
@@ -140,6 +175,18 @@ class Historico:
                 "Data" : datetime.now().strftime("%d-%m-%Y %H:%M:%S")
             }
         )
+    
+    def gerar_relatorio(self, tipo_de_transacao=None):
+        for transacao in self._transacoes:
+            if tipo_de_transacao is None or transacao["Tipo"].lower() == tipo_de_transacao.lower():
+                yield transacao
+    
+    def transacoes_do_dia(self):
+        transacoes = []
+        for transacao in self._transacoes:
+            if datetime.strptime(transacao["Data"], "%d-%m-%Y %H:%M:%S").date() == datetime.now(timezone.utc).date():
+                transacoes.append(transacao)
+        return transacoes
 
 class Transacao(ABC):
     @abstractproperty
@@ -188,6 +235,7 @@ def menu():
     ► '''
     return input(textwrap.dedent(menu))
 
+@log_transacao
 def deposito(clientes):
     cpf = input("Informe o CPF do cliente: ")
     cliente = filtrar_usuario(cpf, clientes)
@@ -208,12 +256,13 @@ def deposito(clientes):
     
     cliente.realizar_transacao(conta, transacao)
 
+@log_transacao
 def saque(clientes):
-    cpf = input("Informe o CPF do cliente:")
+    cpf = input("Informe o CPF do cliente: ")
     cliente = filtrar_usuario(cpf, clientes)
     if not cliente:
         print('ERRO: Cliente não encontrado')
-        return
+        return False
 
     str_valor_saque = input('Informe o valor do saque ou digite "c" para cancelar: ')
     if str_valor_saque == "c":
@@ -224,10 +273,12 @@ def saque(clientes):
     
     conta = recuperar_conta(cliente)
     if not conta:
-        return
+        return False
     
     cliente.realizar_transacao(conta, transacao)
+    return True
 
+@log_transacao
 def exibir_extrato(clientes):
     cpf = input("Informe o CPF do cliente: ")
     cliente = filtrar_usuario(cpf, clientes)
@@ -238,20 +289,21 @@ def exibir_extrato(clientes):
     conta = recuperar_conta(cliente)
     if not conta:
         return
-    print("\n══════════════ Extrato ══════════════")
+    print("\n════════════════════════ Extrato ════════════════════════")
     print(f"\nSaldo:\t\tR$ {conta.saldo:.2f}")
-    transacoes = conta.historico.transacoes
+    transacoes = False
 
     extrato = ""
+    for transacao in conta.historico.gerar_relatorio():
+        extrato += f'\n{transacao["Data"]}\t{transacao["Tipo"]:<15}\tR${transacao["Valor"]:.2f}'
+        transacoes = True
+
     if not transacoes:
         extrato = "Não foram realizadas movimentações"
     
-    else:
-        for transacao in transacoes:
-            extrato += f'\n{transacao["Data"]}\t{transacao["Tipo"]}\tR${transacao["Valor"]:.2f}'
     
-    print(extrato)
-    print("\n═════════════════════════════════════")
+    print(textwrap.dedent(extrato))
+    print("\n═════════════════════════════════════════════════════════")
 
 def filtrar_usuario(cpf, usuarios):
     usuarios_filtrados = [usuario for usuario in usuarios if usuario.cpf == cpf]
@@ -262,6 +314,7 @@ def recuperar_conta(cliente):
         print('ERRO: Cliente não possui contas.')
         return
     
+    # FIXME: Implementar escolha de contas pelo usuário
     # print('O cliente possui as seguintes contas:')
     # print(f''' {
     #                 [ conta.numero for conta in cliente.contas ]
@@ -270,6 +323,7 @@ def recuperar_conta(cliente):
     # input('Qual conta deseja acessar?')
     return cliente.contas[0]
 
+@log_transacao
 def novo_usuario(usuarios):
     cpf = input('Insira seu CPF (apenas números): ')
     usuario = filtrar_usuario(cpf, usuarios)
@@ -289,6 +343,7 @@ def novo_usuario(usuarios):
     usuarios.append(cliente)
     print('Usuário criado com sucesso!')
 
+@log_transacao
 def nova_conta(usuarios, contas):
     cpf = input("Informe o CPF do usuário: ")
     usuario = filtrar_usuario(cpf, usuarios)
@@ -308,7 +363,7 @@ def nova_conta(usuarios, contas):
     usuario.contas.append(conta)
 
 def listar_contas(contas):
-    for conta in contas:
+    for conta in ContasIterador(contas):
         print('═' * 100)
         print(textwrap.dedent(str(conta)))
 
@@ -324,7 +379,9 @@ def main():
             deposito(clientes)
 
         elif opcao == "s":
-            saque(clientes)
+            sacar = False
+            while sacar == False:
+                sacar = saque(clientes)
         
         elif opcao == "e":
             exibir_extrato(clientes)
