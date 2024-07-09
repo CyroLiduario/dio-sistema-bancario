@@ -1,7 +1,9 @@
 # Sistema bancário seguindo o paradigma de classes.
 # TODO: fazer um sistema de login
-# TODO: implementar pickle
+# FIXME: armazenar o saldo, cada vez que é feio um pickle load o saldo é zerado.
 
+import os
+import pickle
 import textwrap
 from abc import ABC, abstractclassmethod, abstractproperty
 from datetime import datetime, timezone
@@ -10,6 +12,32 @@ from pathlib import Path
 import inquirer
 
 ROOT_PATH = Path(__file__).parent
+
+
+def load_contas():
+    if os.path.exists(ROOT_PATH / "contas.pk1"):
+        with open(ROOT_PATH / "contas.pk1", "rb") as instancias_contas:
+            return pickle.load(instancias_contas)
+    else:
+        return []
+
+
+def load_clientes():
+    if os.path.exists(ROOT_PATH / "clientes.pk1"):
+        with open(ROOT_PATH / "clientes.pk1", "rb") as instancias_clientes:
+            return pickle.load(instancias_clientes)
+    else:
+        return []
+
+
+def salvar_contas(contas):
+    with open(ROOT_PATH / "contas.pk1", "wb") as instancias_contas:
+        return pickle.dump(contas, instancias_contas)
+
+
+def salvar_clientes(clientes):
+    with open(ROOT_PATH / "clientes.pk1", "wb") as instancias_clientes:
+        return pickle.dump(clientes, instancias_clientes)
 
 
 def log_transacao(func):
@@ -428,8 +456,8 @@ def listar_contas(contas):
 
 
 def main():
-    clientes = []
-    contas = []
+    clientes = load_clientes()
+    contas = load_contas()
 
     while True:
 
@@ -456,6 +484,8 @@ def main():
             novo_usuario(clientes)
 
         elif opcao == "q":
+            salvar_clientes(clientes)
+            salvar_contas(contas)
             break
 
         else:
