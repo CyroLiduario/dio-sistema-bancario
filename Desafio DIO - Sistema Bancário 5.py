@@ -1,6 +1,5 @@
 # Sistema bancário seguindo o paradigma de classes.
 # TODO: fazer um sistema de login
-# FIXME: armazenar o saldo, cada vez que é feio um pickle load o saldo é zerado.
 
 import os
 import pickle
