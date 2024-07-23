@@ -1,4 +1,5 @@
 # Sistema bancário seguindo o paradigma de classes.
+# Sistema de login implementado
 # FIXME: a função listar contas está mostrando saldos desatualizados.
 
 import os
@@ -475,6 +476,7 @@ def nova_conta(contas, session=None, cliente=None):
 
     contas.append(conta)
     usuario.contas.append(conta)
+    return conta
 
 
 def listar_contas(contas, session):
