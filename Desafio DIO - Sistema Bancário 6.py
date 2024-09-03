@@ -1,6 +1,7 @@
 # Sistema bancário seguindo o paradigma de classes.
 # Sistema de login implementado
 # FIXME: a função listar contas está mostrando saldos desatualizados.
+# TODO: implementar um banco de dados
 
 import os
 import pickle
