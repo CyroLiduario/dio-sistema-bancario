@@ -4,7 +4,7 @@
 # TODO: implementar um banco de dados
 
 import os
-import pickle
+import sqlite3
 import textwrap
 from abc import ABC, abstractclassmethod, abstractproperty
 from datetime import datetime, timezone
@@ -16,30 +16,100 @@ import inquirer
 ROOT_PATH = Path(__file__).parent
 
 
-def load_contas():
-    if os.path.exists(ROOT_PATH / "contas.pk1"):
-        with open(ROOT_PATH / "contas.pk1", "rb") as instancias_contas:
-            return pickle.load(instancias_contas)
-    else:
-        return []
+class BancoDeDados:
+    def __init__(self, db_path="banco.db"):
+        self.conn = sqlite3.connect(db_path)
+        self.criar_tabelas()
 
+    def criar_tabelas(self):
+        with self.conn:
+            self.conn.execute('''
+                CREATE TABLE IF NOT EXISTS clientes (
+                    cpf TEXT PRIMARY KEY,
+                    nome TEXT,
+                    data_de_nascimento TEXT,
+                    endereco TEXT,
+                    senha TEXT
+                )
+            ''')
+            self.conn.execute('''
+                CREATE TABLE IF NOT EXISTS contas (
+                    numero INTEGER PRIMARY KEY,
+                    agencia TEXT,
+                    cpf_cliente TEXT,
+                    saldo REAL,
+                    limite REAL,
+                    limite_de_saques INTEGER,
+                    FOREIGN KEY (cpf_cliente) REFERENCES clientes(cpf)
+                )
+            ''')
+            self.conn.execute('''
+                CREATE TABLE IF NOT EXISTS transacoes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    numero_conta INTEGER,
+                    tipo TEXT,
+                    valor REAL,
+                    data TEXT,
+                    FOREIGN KEY (numero_conta) REFERENCES contas(numero)
+                )
+            ''')
 
-def load_clientes():
-    if os.path.exists(ROOT_PATH / "clientes.pk1"):
-        with open(ROOT_PATH / "clientes.pk1", "rb") as instancias_clientes:
-            return pickle.load(instancias_clientes)
-    else:
-        return []
+    def salvar_cliente(self, cliente):
+        with self.conn:
+            self.conn.execute('''
+                INSERT INTO clientes (cpf, nome, data_de_nascimento, endereco, senha)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (cliente.cpf, cliente.nome, cliente.data_de_nascimento, cliente.endereco, cliente._senha))
 
+    def salvar_conta(self, conta):
+        with self.conn:
+            self.conn.execute('''
+                INSERT INTO contas (numero, agencia, cpf_cliente, saldo, limite, limite_de_saques)
+                VALUES (?, ?, ?, ?, ?, ?)
+            ''', (conta.numero, conta.agencia, conta.cliente.cpf, conta.saldo, conta.limite, conta.limite_de_saques))
 
-def salvar_contas(contas):
-    with open(ROOT_PATH / "contas.pk1", "wb") as instancias_contas:
-        return pickle.dump(contas, instancias_contas)
+    def atualizar_saldo(self, numero_conta, saldo):
+        with self.conn:
+            self.conn.execute('''
+                UPDATE contas
+                SET saldo = ?
+                WHERE numero = ?
+            ''', (saldo, numero_conta))
 
+    def carregar_clientes(self):
+        clientes = []
+        with self.conn:
+            cursor = self.conn.execute('SELECT cpf, nome, data_de_nascimento, endereco, senha FROM clientes')
+            for row in cursor:
+                cliente = PessoaFisica(cpf=row[0], nome=row[1], data_de_nascimento=row[2], endereco=row[3], senha=row[4])
+                clientes.append(cliente)
+        return clientes
 
-def salvar_clientes(clientes):
-    with open(ROOT_PATH / "clientes.pk1", "wb") as instancias_clientes:
-        return pickle.dump(clientes, instancias_clientes)
+    def carregar_contas(self):
+        contas = []
+        with self.conn:
+            cursor = self.conn.execute('SELECT numero, agencia, cpf_cliente, saldo, limite, limite_de_saques FROM contas')
+            for row in cursor:
+                cliente = self.carregar_cliente_por_cpf(row[2])
+                conta = ContaCorrente(numero=row[0], cliente=cliente, AGENCIA=row[1], limite=row[4], limite_de_saques=row[5])
+                conta._saldo = row[3]
+                contas.append(conta)
+        return contas
+
+    def carregar_cliente_por_cpf(self, cpf):
+        with self.conn:
+            cursor = self.conn.execute('SELECT cpf, nome, data_de_nascimento, endereco, senha FROM clientes WHERE cpf = ?', (cpf,))
+            row = cursor.fetchone()
+            if row:
+                return PessoaFisica(cpf=row[0], nome=row[1], data_de_nascimento=row[2], endereco=row[3], senha=row[4])
+        return None
+
+    def salvar_transacao(self, transacao, numero_conta):
+        with self.conn:
+            self.conn.execute('''
+                INSERT INTO transacoes (numero_conta, tipo, valor, data)
+                VALUES (?, ?, ?, ?)
+            ''', (numero_conta, transacao.__class__.__name__, transacao.valor, datetime.now().strftime("%d-%m-%Y %H:%M:%S")))
 
 
 def log_transacao(func):
@@ -335,6 +405,23 @@ def login(clientes, contas):
     print("Login realizado com sucesso!")
     return Session(cliente, conta)
 
+db = BancoDeDados()
+
+def load_clientes():
+    return db.carregar_clientes()
+
+def load_contas():
+    return db.carregar_contas()
+
+def salvar_clientes(clientes):
+    for cliente in clientes:
+        db.salvar_cliente(cliente)
+
+def salvar_contas(contas):
+    for conta in contas:
+        db.salvar_conta(conta)
+
+
 def menu():
 
     menu = """
@@ -373,7 +460,9 @@ def deposito(session):
     valor_deposito = float(str_valor_deposito)
     transacao = Deposito(valor_deposito)
 
-    cliente.realizar_transacao(conta, transacao)
+    if cliente.realizar_transacao(conta, transacao):
+        db.atualizar_saldo(conta.numero, conta.saldo)
+        db.salvar_transacao(transacao, conta.numero)
 
 
 @log_transacao
@@ -388,16 +477,21 @@ def saque(session):
     valor = float(str_valor_saque)
     transacao = Saque(valor)
 
-    cliente.realizar_transacao(conta, transacao)
+    if cliente.realizar_transacao(conta, transacao):
+        db.atualizar_saldo(conta.numero, conta.saldo)
+        db.salvar_transacao(transacao, conta.numero)
     return True
 
 
 @log_transacao
 def exibir_extrato(session):
     conta = session.conta
-
+    if conta.saldo is None:
+        saldo = 0
+    else:
+        saldo = conta.saldo
     print("\n════════════════════════ Extrato ════════════════════════")
-    print(f"\nSaldo:\t\tR$ {conta.saldo:.2f}")
+    print(f"\nSaldo:\t\tR$ {saldo:.2f}")
     transacoes = False
 
     extrato = ""
